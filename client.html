@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Math Game Client</title>
+</head>
+<body>
+  <h2>Join Room</h2>
+  <label>Player ID: <input id="pid" placeholder="player1" /></label><br />
+  <button id="connectBtn" onclick="joinMatch()">Join Match</button>
+  <div id="status"></div>
+
+  <div id="game" style="display:none;">
+    <h3 id="question">Waiting for question...</h3>
+    <label>Your Answer: <input id="answer" type="number" /></label>
+    <button onclick="sendAnswer()">Submit</button>
+    <pre id="log"></pre>
+  </div>
+
+  <script>
+    let socket;
+
+    async function joinMatch() {
+      const pid = document.getElementById("pid").value;
+      const response = await fetch("http://localhost:9000/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: pid })
+      });
+
+      const text = await response.text();
+      try {
+        const data = JSON.parse(text); // if it's JSON, we got a room
+        document.getElementById("status").textContent = `Joined Room: ${data.id}`;
+        connectToRust(data.id, pid);
+      } catch {
+        document.getElementById("status").textContent = text;
+        setTimeout(joinMatch, 2000); // retry
+      }
+    }
+
+    function connectToRust(roomId, playerId) {
+      socket = new WebSocket(`ws://localhost:8000/ws/${roomId}/${playerId}`);
+
+      socket.onopen = () => {
+        console.log(`✅ Connected as ${playerId} in room ${roomId}`);
+        document.getElementById("connectBtn").disabled = true;
+      };
+
+      socket.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.question) {
+            document.getElementById("game").style.display = "block";
+            document.getElementById("question").textContent = data.question;
+          } else if (data.winner) {
+            document.getElementById("log").textContent += `\n🏆 Winner: ${data.winner}, Answer: ${data.correct_answer}`;
+          }
+        } catch {
+          document.getElementById("log").textContent += `\n${e.data}`;
+        }
+      };
+
+      socket.onerror = (err) => {
+        console.error("❌ WebSocket error:", err);
+      };
+    }
+
+    function sendAnswer() {
+      const player_id = document.getElementById("pid").value;
+      const answer = parseInt(document.getElementById("answer").value);
+      const msg = {
+        player_id,
+        answer
+      };
+      socket.send(JSON.stringify(msg));
+    }
+  </script>
+</body>
+</html>
